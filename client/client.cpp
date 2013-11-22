@@ -57,7 +57,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	while(1)
 	{
-		Sleep(10);
+		Sleep(1000);
 		char *test = "Test";
 		
 		DWORD bytesWritten = 0;
