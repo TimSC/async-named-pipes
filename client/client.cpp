@@ -30,7 +30,7 @@ wstring ErrStr(DWORD err)
 
 VOID CALLBACK FileIOCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered,LPOVERLAPPED lpOverlapped)
 {
-
+	cout << "FileIOCompletionRoutine" << endl;
 }
 
 int _tmain(int argc, _TCHAR* argv[])
@@ -61,7 +61,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		char *test = "Test";
 		
 		DWORD bytesWritten = 0;
-		BOOL res = WriteFileEx(h, test, strlen(test), &txo, &FileIOCompletionRoutine);
+		BOOL res = WriteFileEx(h, test, strlen(test), &txo, NULL);
 		if(res==0) wcout << ErrStr(GetLastError()) << endl;
 		cout << "Client tx " << res << "," << bytesWritten << endl;
 
