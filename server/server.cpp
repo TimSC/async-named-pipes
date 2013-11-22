@@ -34,95 +34,126 @@ VOID WINAPI CompletedReadRoutine(DWORD dwErr, DWORD cbBytesRead,
 	cout << "CompletedReadRoutine " << cbBytesRead << endl;
 }
 
+#define INSTANCES 4
+
 int _tmain(int argc, _TCHAR* argv[])
 {
-	LPCTSTR n = L"\\\\.\\pipe\\testpipe";
-	HANDLE h = CreateNamedPipe(n, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, 
-		PIPE_TYPE_BYTE | PIPE_WAIT,
-		PIPE_UNLIMITED_INSTANCES,
-		1024*1024,
-		1024*1024,
-		5000, NULL);
 
-	if(h == 0)
-	{
-		wcout << ErrStr(GetLastError()) << endl;
+	HANDLE hConnectEvents[INSTANCES]; 
+	HANDLE hPipes[INSTANCES];
+	HANDLE h;
+	BOOL pendingIo[INSTANCES];
+	OVERLAPPED conovr[INSTANCES];
+	BOOL waitingForConnection[INSTANCES];
+	char *rxBuffs[INSTANCES];
+	int writeMode[INSTANCES];
+
+	for (int i = 0; i < INSTANCES; i++) 
+	{ 
+
+		LPCTSTR n = L"\\\\.\\pipe\\testpipe";
+		hPipes[i] = CreateNamedPipe(n, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, 
+			PIPE_TYPE_BYTE | PIPE_WAIT,
+			PIPE_UNLIMITED_INSTANCES,
+			1024*1024,
+			1024*1024,
+			5000, NULL);
+
+		if(hPipes[i] == 0)
+		{
+			wcout << ErrStr(GetLastError()) << endl;
+		}
+
+		hConnectEvents[i] = CreateEvent( 
+		  NULL,    // default security attribute
+		  TRUE,    // manual reset event 
+		  TRUE,    // initial state = signaled 
+		  NULL);   // unnamed event object 
+
+		::memset(&conovr[i], 0x00, sizeof(OVERLAPPED));
+		conovr[i].hEvent = hConnectEvents[i]; 
+
+		ConnectNamedPipe(hPipes[i], &conovr[i]);
+		waitingForConnection[i] = 1;
+
+		pendingIo[i] = 0;
+		if(GetLastError()==ERROR_IO_PENDING)
+			pendingIo[i] = 1;
+
+		cout << i << " " << pendingIo[i] << endl;
+
+		rxBuffs[i] = new char[1000];
+		writeMode[i] = 0;
 	}
-
-	HANDLE hConnectEvent = CreateEvent( 
-      NULL,    // default security attribute
-      TRUE,    // manual reset event 
-      TRUE,    // initial state = signaled 
-      NULL);   // unnamed event object 
-
-	OVERLAPPED conovr;
-	memset(&conovr, 0x00, sizeof(OVERLAPPED));
-	conovr.hEvent = hConnectEvent; 
-
-	BOOL res = ConnectNamedPipe(h, &conovr);
-
-	DWORD dwWait = WaitForSingleObjectEx( 
-         hConnectEvent,  // event object to wait for 
-         INFINITE,       // waits indefinitely 
-         TRUE);          // alertable wait enabled 
-
-	if(res == 0)
-	{
-		wcout << ErrStr(GetLastError()) << endl;
-	}
-
-	OVERLAPPED rxo;
-	memset(&rxo, 0x00, sizeof(OVERLAPPED));
-	OVERLAPPED txo;
-	memset(&txo, 0x00, sizeof(OVERLAPPED));
-
-	HANDLE ev;
 
 	while(1)
 	{
-		char buff[1000];
-		DWORD bytesRead = 0;
 
-		if(HasOverlappedIoCompleted(&rxo))
+		DWORD dwWait = WaitForMultipleObjects(  INSTANCES,
+			 hConnectEvents,  // event object to wait for 
+			 FALSE,
+			 INFINITE);          
+
+		int ind = dwWait - WAIT_OBJECT_0 ;
+		int ind2 = dwWait - WAIT_ABANDONED_0;
+		if(dwWait == WAIT_TIMEOUT)
+			int timeOut = 1;
+		if(ind >= 0 && ind < INSTANCES)
 		{
-			BOOL res = ReadFileEx(h,
-			  buff,
-			  1000,
-			  &rxo,
-			  (LPOVERLAPPED_COMPLETION_ROUTINE) CompletedReadRoutine);
-			if(res==0 && GetLastError() != ERROR_NO_DATA) 
-				wcout << "rx " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
+			h = hPipes[ind];
+
+			if(pendingIo[ind])
+			{
+				DWORD bytesRx = 0;
+				BOOL fSuccess = GetOverlappedResult( 
+					hPipes[ind], // handle to pipe 
+					&conovr[ind], // OVERLAPPED structure 
+					&bytesRx,            // bytes transferred 
+					FALSE);            // do not wait 
+
+				if(bytesRx > 0)
+					cout << ind << " " << bytesRx << endl;
+
+				pendingIo[ind] = 0;
+			}
+
+			if(waitingForConnection[ind])
+			{
+				cout << "Connection on pipe " << ind << endl;
+				waitingForConnection[ind] = 0;
+			}
+
+			if(!pendingIo[ind])
+			{
+				if(writeMode[ind])
+				{
+					char testBuff[] = "Test Transmission";
+					BOOL es = WriteFileEx(hPipes[ind], 
+						testBuff, 
+						strlen(testBuff), 
+						&conovr[ind], NULL);
+					//if(res==0 && GetLastError() != ERROR_NO_DATA) 
+					//	wcout << "rx " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
+
+					pendingIo[ind] = 1;
+					writeMode[ind] = 0;
+				}
+				else
+				{
+					BOOL res = ReadFileEx(hPipes[ind],
+						rxBuffs[ind],
+						1000,
+						&conovr[ind],
+						(LPOVERLAPPED_COMPLETION_ROUTINE) CompletedReadRoutine);
+					//if(res==0 && GetLastError() != ERROR_NO_DATA) 
+					//	wcout << "rx " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
+
+					pendingIo[ind] = 1;
+					writeMode[ind] = 1;
+				}
+			}
 
 		}
-
-		BOOL res = GetOverlappedResult(h, &rxo, &bytesRead, FALSE);
-		
-		/*if (res == 0 && GetLastError() == ERROR_BROKEN_PIPE)
-		{
-			cout << "Reinit" << endl;
-			//Reinitialise listening for client
-			DisconnectNamedPipe(h);
-			BOOL res = ConnectNamedPipe(h, NULL);
-			continue;
-		}*/
-
-		if(res==0) 
-			wcout << "rx2 " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
-
-		cout << "Server rx " << res << "," << bytesRead << endl;
-
-		char test2[] = "test2";
-		DWORD bytesWritten = 0;
-		BOOL es = WriteFileEx(h, test2, strlen(test2), &txo, NULL);
-		if(res==0) wcout << "tx " << ErrStr(GetLastError()) << endl;
-
-		cout << "Server tx " << res << "," << bytesRead << endl;
-
-		res = GetOverlappedResult(h, &txo, &bytesWritten, TRUE);
-		if(res==0) wcout << ErrStr(GetLastError()) << endl;
-		cout << "Client tx2 " << res << "," << bytesWritten << endl;
-
-		Sleep(20);
 	}
 
 	return 0;
