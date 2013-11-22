@@ -28,27 +28,43 @@ wstring ErrStr(DWORD err)
 	return out;
 }
 
-VOID CALLBACK FileIOCompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered,LPOVERLAPPED lpOverlapped)
+VOID WINAPI CompletedReadRoutine(DWORD dwErr, DWORD cbBytesRead, 
+    LPOVERLAPPED lpOverLap) 
 {
-	cout << "FileIOCompletionRoutine" << endl;
+	cout << "CompletedReadRoutine " << cbBytesRead << endl;
 }
 
 int _tmain(int argc, _TCHAR* argv[])
 {
 	LPCTSTR n = L"\\\\.\\pipe\\testpipe";
 	HANDLE h = CreateNamedPipe(n, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED, 
-		PIPE_TYPE_BYTE | PIPE_NOWAIT,
+		PIPE_TYPE_BYTE | PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,
 		1024*1024,
 		1024*1024,
-		50, NULL);
+		5000, NULL);
 
 	if(h == 0)
 	{
 		wcout << ErrStr(GetLastError()) << endl;
 	}
 
-	BOOL res = ConnectNamedPipe(h, NULL);
+	HANDLE hConnectEvent = CreateEvent( 
+      NULL,    // default security attribute
+      TRUE,    // manual reset event 
+      TRUE,    // initial state = signaled 
+      NULL);   // unnamed event object 
+
+	OVERLAPPED conovr;
+	memset(&conovr, 0x00, sizeof(OVERLAPPED));
+	conovr.hEvent = hConnectEvent; 
+
+	BOOL res = ConnectNamedPipe(h, &conovr);
+
+	DWORD dwWait = WaitForSingleObjectEx( 
+         hConnectEvent,  // event object to wait for 
+         INFINITE,       // waits indefinitely 
+         TRUE);          // alertable wait enabled 
 
 	if(res == 0)
 	{
@@ -59,6 +75,8 @@ int _tmain(int argc, _TCHAR* argv[])
 	memset(&rxo, 0x00, sizeof(OVERLAPPED));
 	OVERLAPPED txo;
 	memset(&txo, 0x00, sizeof(OVERLAPPED));
+
+	HANDLE ev;
 
 	while(1)
 	{
@@ -71,10 +89,12 @@ int _tmain(int argc, _TCHAR* argv[])
 			  buff,
 			  1000,
 			  &rxo,
-			  &FileIOCompletionRoutine);
+			  (LPOVERLAPPED_COMPLETION_ROUTINE) CompletedReadRoutine);
 			if(res==0 && GetLastError() != ERROR_NO_DATA) 
 				wcout << "rx " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
+
 		}
+
 		BOOL res = GetOverlappedResult(h, &rxo, &bytesRead, FALSE);
 		
 		/*if (res == 0 && GetLastError() == ERROR_BROKEN_PIPE)
@@ -90,10 +110,10 @@ int _tmain(int argc, _TCHAR* argv[])
 			wcout << "rx2 " << GetLastError() << " " << ErrStr(GetLastError()) << endl;
 
 		cout << "Server rx " << res << "," << bytesRead << endl;
-		
+
 		char test2[] = "test2";
 		DWORD bytesWritten = 0;
-		res = WriteFileEx(h, test2, strlen(test2), &txo, NULL);
+		BOOL es = WriteFileEx(h, test2, strlen(test2), &txo, NULL);
 		if(res==0) wcout << "tx " << ErrStr(GetLastError()) << endl;
 
 		cout << "Server tx " << res << "," << bytesRead << endl;
