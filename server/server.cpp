@@ -14,7 +14,8 @@ using namespace std;
  #define BUFSIZE 512
  
 DWORD WINAPI InstanceThread(LPVOID); 
-VOID GetAnswerToRequest(LPTSTR, LPTSTR, LPDWORD); 
+VOID GetAnswerToRequest(char *, LPDWORD); 
+void ProcessClientMessage(char *pchRequest);
  
 int _tmain(VOID) 
 { 
@@ -35,8 +36,8 @@ int _tmain(VOID)
       hPipe = CreateNamedPipe( 
           lpszPipename,             // pipe name 
           PIPE_ACCESS_DUPLEX,       // read/write access 
-          PIPE_TYPE_MESSAGE |       // message type pipe 
-          PIPE_READMODE_MESSAGE |   // message-read mode 
+          PIPE_TYPE_BYTE |       // message type pipe 
+          PIPE_READMODE_BYTE |   // message-read mode 
           PIPE_WAIT,                // blocking mode 
           PIPE_UNLIMITED_INSTANCES, // max. instances  
           BUFSIZE,                  // output buffer size 
@@ -93,8 +94,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 // client connections.
 { 
    HANDLE hHeap      = GetProcessHeap();
-   TCHAR* pchRequest = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE*sizeof(TCHAR));
-   TCHAR* pchReply   = (TCHAR*)HeapAlloc(hHeap, 0, BUFSIZE*sizeof(TCHAR));
+   char* pRequest = (char*)HeapAlloc(hHeap, 0, BUFSIZE);
+   char* pReply   = (char*)HeapAlloc(hHeap, 0, BUFSIZE);
 
    DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0; 
    BOOL fSuccess = FALSE;
@@ -108,26 +109,26 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
        printf( "\nERROR - Pipe Server Failure:\n");
        printf( "   InstanceThread got an unexpected NULL value in lpvParam.\n");
        printf( "   InstanceThread exitting.\n");
-       if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
-       if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
+       if (pReply != NULL) HeapFree(hHeap, 0, pReply);
+       if (pRequest != NULL) HeapFree(hHeap, 0, pRequest);
        return (DWORD)-1;
    }
 
-   if (pchRequest == NULL)
+   if (pRequest == NULL)
    {
        printf( "\nERROR - Pipe Server Failure:\n");
        printf( "   InstanceThread got an unexpected NULL heap allocation.\n");
        printf( "   InstanceThread exitting.\n");
-       if (pchReply != NULL) HeapFree(hHeap, 0, pchReply);
+       if (pReply != NULL) HeapFree(hHeap, 0, pReply);
        return (DWORD)-1;
    }
 
-   if (pchReply == NULL)
+   if (pReply == NULL)
    {
        printf( "\nERROR - Pipe Server Failure:\n");
        printf( "   InstanceThread got an unexpected NULL heap allocation.\n");
        printf( "   InstanceThread exitting.\n");
-       if (pchRequest != NULL) HeapFree(hHeap, 0, pchRequest);
+       if (pRequest != NULL) HeapFree(hHeap, 0, pRequest);
        return (DWORD)-1;
    }
 
@@ -145,8 +146,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
    // up to BUFSIZE characters in length.
       fSuccess = ReadFile( 
          hPipe,        // handle to pipe 
-         pchRequest,    // buffer to receive data 
-         BUFSIZE*sizeof(TCHAR), // size of buffer 
+         pRequest,    // buffer to receive data 
+         BUFSIZE, // size of buffer 
          &cbBytesRead, // number of bytes read 
          NULL);        // not overlapped I/O 
 
@@ -163,13 +164,16 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
           break;
       }
 
-   // Process the incoming message.
-      GetAnswerToRequest(pchRequest, pchReply, &cbReplyBytes); 
+	  //Process received message
+	  ProcessClientMessage(pRequest);
+
+   // Get response string
+      GetAnswerToRequest(pReply, &cbReplyBytes); 
  
    // Write the reply to the pipe. 
       fSuccess = WriteFile( 
          hPipe,        // handle to pipe 
-         pchReply,     // buffer to write from 
+         pReply,     // buffer to write from 
          cbReplyBytes, // number of bytes to write 
          &cbWritten,   // number of bytes written 
          NULL);        // not overlapped I/O 
@@ -189,31 +193,28 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
    DisconnectNamedPipe(hPipe); 
    CloseHandle(hPipe); 
 
-   HeapFree(hHeap, 0, pchRequest);
-   HeapFree(hHeap, 0, pchReply);
+   HeapFree(hHeap, 0, pRequest);
+   HeapFree(hHeap, 0, pReply);
 
    printf("InstanceThread exitting.\n");
    return 1;
 }
 
-VOID GetAnswerToRequest( LPTSTR pchRequest, 
-                         LPTSTR pchReply, 
-                         LPDWORD pchBytes )
+VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes )
 // This routine is a simple function to print the client request to the console
 // and populate the reply buffer with a default data string. This is where you
 // would put the actual client request processing code that runs in the context
 // of an instance thread. Keep in mind the main thread will continue to wait for
 // and receive other client connections while the instance thread is working.
 {
-    _tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
+    //_tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
 
-    // Check the outgoing message to make sure it's not too long for the buffer.
-    if (FAILED(StringCchCopy( pchReply, BUFSIZE, TEXT("default answer from server") )))
-    {
-        *pchBytes = 0;
-        pchReply[0] = 0;
-        printf("StringCchCopy failed, no outgoing message.\n");
-        return;
-    }
-    *pchBytes = (lstrlen(pchReply)+1)*sizeof(TCHAR);
+	char str[] = "default answer from server";
+	strncpy(pReply, str, BUFSIZE);
+    *pchBytes = (strlen(str)+1);
+}
+
+void ProcessClientMessage(char *pchRequest)
+{
+	printf("rx %d\n", strlen(pchRequest));
 }
