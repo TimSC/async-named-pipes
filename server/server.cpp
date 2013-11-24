@@ -15,7 +15,7 @@ using namespace std;
  
 DWORD WINAPI InstanceThread(LPVOID); 
 VOID GetAnswerToRequest(char *, LPDWORD); 
-void ProcessClientMessage(char *pchRequest);
+void ProcessClientMessage(char *pchRequest, DWORD);
  
 int _tmain(VOID) 
 { 
@@ -165,7 +165,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
       }
 
 	  //Process received message
-	  ProcessClientMessage(pRequest);
+	  ProcessClientMessage(pRequest, cbBytesRead);
 
    // Get response string
       GetAnswerToRequest(pReply, &cbReplyBytes); 
@@ -214,7 +214,9 @@ VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes )
     *pchBytes = (strlen(str)+1);
 }
 
-void ProcessClientMessage(char *pchRequest)
+void ProcessClientMessage(char *pchRequest, DWORD len)
 {
-	printf("rx %d\n", strlen(pchRequest));
+	printf("rx %d\n", len);
+
+	
 }
