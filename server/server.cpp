@@ -11,11 +11,11 @@ using namespace std;
 #include <stdio.h>
 #include <tchar.h>
 #include <strsafe.h>
- #define BUFSIZE 512
+#define BUFSIZE 1024*1024
  
 DWORD WINAPI InstanceThread(LPVOID); 
-VOID GetAnswerToRequest(char *, LPDWORD); 
-void ProcessClientMessage(char *pchRequest, DWORD);
+VOID GetAnswerToRequest(char *, LPDWORD, class InstanceConfig &instanceConfig); 
+int ProcessClientMessage(class InstanceConfig &instanceConfig);
  
 int _tmain(VOID) 
 { 
@@ -86,6 +86,21 @@ int _tmain(VOID)
    return 0; 
 } 
  
+class InstanceConfig
+{
+public:
+	std::string rxBuff;
+	UINT32 width, height, frameLen;
+
+	InstanceConfig()
+	{
+		width = 0;
+		height = 0;
+		frameLen = 0;
+	}
+};
+
+
 DWORD WINAPI InstanceThread(LPVOID lpvParam)
 // This routine is a thread processing function to read from and reply to a client
 // via the open pipe connection passed from the main loop. Note this allows
@@ -100,6 +115,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
    DWORD cbBytesRead = 0, cbReplyBytes = 0, cbWritten = 0; 
    BOOL fSuccess = FALSE;
    HANDLE hPipe  = NULL;
+   class InstanceConfig instanceConfig;
 
    // Do some extra error checking since the app will keep running even if this
    // thread fails.
@@ -139,9 +155,30 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
  
    hPipe = (HANDLE) lpvParam; 
 
+	//Initialise timer
+	SYSTEMTIME systime;
+	GetSystemTime(&systime);
+	FILETIME lastUpdateTime;
+	SystemTimeToFileTime(&systime, &lastUpdateTime);
+
 // Loop until done reading
    while (1) 
    { 
+		SYSTEMTIME systime;
+		GetSystemTime(&systime);
+		FILETIME fiTime;
+		SystemTimeToFileTime(&systime, &fiTime);
+		LARGE_INTEGER fiTimeNum;
+		fiTimeNum.HighPart = fiTime.dwHighDateTime;
+		fiTimeNum.LowPart = fiTime.dwLowDateTime;
+		LARGE_INTEGER lastUpdate;
+		lastUpdate.HighPart = lastUpdateTime.dwHighDateTime;
+		lastUpdate.LowPart = lastUpdateTime.dwLowDateTime;
+
+		LARGE_INTEGER elapse;
+		elapse.QuadPart = fiTimeNum.QuadPart - lastUpdate.QuadPart;
+		float elapseMs = elapse.LowPart / 10000.f;
+
    // Read client requests from the pipe. This simplistic code only allows messages
    // up to BUFSIZE characters in length.
       fSuccess = ReadFile( 
@@ -165,13 +202,18 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
       }
 
 	  //Process received message
-	  ProcessClientMessage(pRequest, cbBytesRead);
+	  instanceConfig.rxBuff.append(pRequest, cbBytesRead);
+	  
+	  if(elapseMs >= 1000.f)
+	  {
+		  ProcessClientMessage(instanceConfig);
 
-   // Get response string
-      GetAnswerToRequest(pReply, &cbReplyBytes); 
+		printf("elapse %f\n", elapseMs);
+		// Get response string
+		GetAnswerToRequest(pReply, &cbReplyBytes, instanceConfig); 
  
-   // Write the reply to the pipe. 
-      fSuccess = WriteFile( 
+		// Write the reply to the pipe. 
+		fSuccess = WriteFile( 
          hPipe,        // handle to pipe 
          pReply,     // buffer to write from 
          cbReplyBytes, // number of bytes to write 
@@ -183,6 +225,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
           _tprintf(TEXT("InstanceThread WriteFile failed, GLE=%d.\n"), GetLastError()); 
           break;
       }
+	  lastUpdateTime=fiTime;
+	  }
   }
 
 // Flush the pipe to allow the client to read the pipe's contents 
@@ -200,23 +244,88 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
    return 1;
 }
 
-VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes )
+VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &instanceConfig)
 // This routine is a simple function to print the client request to the console
 // and populate the reply buffer with a default data string. This is where you
 // would put the actual client request processing code that runs in the context
 // of an instance thread. Keep in mind the main thread will continue to wait for
 // and receive other client connections while the instance thread is working.
 {
-    //_tprintf( TEXT("Client Request String:\"%s\"\n"), pchRequest );
+	//char str[] = "default answer from server";
+	//strncpy_s(pReply, strlen(str)+1, str, BUFSIZE);
+    //*pchBytes = (strlen(str)+1);
 
-	char str[] = "default answer from server";
-	strncpy(pReply, str, BUFSIZE);
-    *pchBytes = (strlen(str)+1);
+	UINT32 *numArr = (UINT32 *)pReply;
+	numArr[0] = 3;
+	numArr[1] = 0;
+	*pchBytes = 8;
+
+	/*if(instanceConfig.frameLen  + 8 < BUFSIZE)
+	{
+		//Return frame
+		UINT32 *numArr = (UINT32 *)pReply;
+		numArr[0] = 2;
+		numArr[1] = instanceConfig.frameLen;
+		memset(&pReply[8], 0x00, instanceConfig.frameLen);
+		*pchBytes = 8 + instanceConfig.frameLen;
+	}
+	else
+	{
+		//Insufficient space in buffer
+		UINT32 *numArr = (UINT32 *)pReply;
+		numArr[0] = 3;
+		numArr[1] = 0;
+		*pchBytes = 8;
+	}*/
 }
 
-void ProcessClientMessage(char *pchRequest, DWORD len)
+int ProcessClientMessage(class InstanceConfig &instanceConfig)
 {
-	printf("rx %d\n", len);
+	int count = 0;
+	int processing = 1;
+	while(processing && instanceConfig.rxBuff.size() > 8)
+	{
+		UINT32 *wordArray = (UINT32 *)instanceConfig.rxBuff.c_str();
+		UINT32 msgType = wordArray[0];
+		UINT32 msgLen = wordArray[1];
+		if(instanceConfig.rxBuff.size() >= 8+msgLen)
+		{
+			std::string msg(instanceConfig.rxBuff, 8, msgLen);
+			UINT32 *msgArray = (UINT32 *)msg.c_str();
+			//printf("%d %d %d\n", rxBuff.size(), msgType, msg.size());
 
+			instanceConfig.rxBuff.assign(instanceConfig.rxBuff, 8+msgLen, instanceConfig.rxBuff.size() - 8 - msgLen);
+
+			if(msgType == 1)
+			{
+				instanceConfig.width = msgArray[0];
+				instanceConfig.height = msgArray[1];
+				instanceConfig.frameLen = msgArray[2];
+				count ++;
+			}
+
+			if(msgType != 1)
+			{
+				printf("Buffer corruption detected\n");
+				return 0;
+			}
+		}
+		else
+		{
+			processing = 0;
+		}
+	}
+
+	printf("rx msg count %d\n", count);
+	//printf("Remain %d\n", rxBuff.size());
+
+	/*int numUints32s = len / 4;
+	UINT32 *uint32Arr = (UINT32 *)pchRequest;
+	for(int i=0;i<numUints32s;i++)
+	{
+		printf("%d ", uint32Arr[i]);
+	}
+	printf("\n");*/
 	
+	return 1;
 }

@@ -58,6 +58,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	while(1)
 	{
 		Sleep(1000);
+
 		char *test = "Test";
 		
 		DWORD bytesWritten = 0;
@@ -90,7 +91,6 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		cout << "Server rx " << res << "," << bytesRead << endl;
 
-		
 	}
 
 
