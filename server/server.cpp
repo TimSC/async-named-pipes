@@ -204,7 +204,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	  //Process received message
 	  instanceConfig.rxBuff.append(pRequest, cbBytesRead);
 	  
-	  if(elapseMs >= 1000.f)
+	  if(elapseMs >= 10.f)
 	  {
 		  ProcessClientMessage(instanceConfig);
 
@@ -226,6 +226,10 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
           break;
       }
 	  lastUpdateTime=fiTime;
+	  }
+	  else
+	  {
+		  Sleep(1);
 	  }
   }
 
@@ -255,12 +259,7 @@ VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &in
 	//strncpy_s(pReply, strlen(str)+1, str, BUFSIZE);
     //*pchBytes = (strlen(str)+1);
 
-	UINT32 *numArr = (UINT32 *)pReply;
-	numArr[0] = 3;
-	numArr[1] = 0;
-	*pchBytes = 8;
-
-	/*if(instanceConfig.frameLen  + 8 < BUFSIZE)
+	if(instanceConfig.frameLen  + 8 < BUFSIZE)
 	{
 		//Return frame
 		UINT32 *numArr = (UINT32 *)pReply;
@@ -276,7 +275,7 @@ VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &in
 		numArr[0] = 3;
 		numArr[1] = 0;
 		*pchBytes = 8;
-	}*/
+	}
 }
 
 int ProcessClientMessage(class InstanceConfig &instanceConfig)
