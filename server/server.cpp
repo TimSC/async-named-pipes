@@ -14,7 +14,7 @@ using namespace std;
 #define BUFSIZE 1024*1024
  
 DWORD WINAPI InstanceThread(LPVOID); 
-VOID GetAnswerToRequest(char *, LPDWORD, class InstanceConfig &instanceConfig); 
+VOID GetAnswerToRequest(char *, LPDWORD, class InstanceConfig &instanceConfig, int frameCount); 
 int ProcessClientMessage(class InstanceConfig &instanceConfig);
  
 int _tmain(VOID) 
@@ -160,6 +160,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 	GetSystemTime(&systime);
 	FILETIME lastUpdateTime;
 	SystemTimeToFileTime(&systime, &lastUpdateTime);
+	int frameCount = 0;
 
 // Loop until done reading
    while (1) 
@@ -210,7 +211,8 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 
 		printf("elapse %f\n", elapseMs);
 		// Get response string
-		GetAnswerToRequest(pReply, &cbReplyBytes, instanceConfig); 
+		GetAnswerToRequest(pReply, &cbReplyBytes, instanceConfig, frameCount); 
+		frameCount++;
  
 		// Write the reply to the pipe. 
 		fSuccess = WriteFile( 
@@ -248,7 +250,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
    return 1;
 }
 
-VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &instanceConfig)
+VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &instanceConfig, int frameCount)
 // This routine is a simple function to print the client request to the console
 // and populate the reply buffer with a default data string. This is where you
 // would put the actual client request processing code that runs in the context
@@ -266,6 +268,14 @@ VOID GetAnswerToRequest(char *pReply, LPDWORD pchBytes, class InstanceConfig &in
 		numArr[0] = 2;
 		numArr[1] = instanceConfig.frameLen;
 		memset(&pReply[8], 0x00, instanceConfig.frameLen);
+		for(unsigned i=0;i<instanceConfig.frameLen;i++)
+		{
+			if(frameCount%2==0)
+				pReply[8+i] = i%256;
+			else
+				pReply[8+i] = (i/2)%256;
+		}
+
 		*pchBytes = 8 + instanceConfig.frameLen;
 	}
 	else
@@ -316,6 +326,7 @@ int ProcessClientMessage(class InstanceConfig &instanceConfig)
 	}
 
 	printf("rx msg count %d\n", count);
+	printf("w%d h%d buff%d\n",instanceConfig.width, instanceConfig.height, instanceConfig.frameLen);
 	//printf("Remain %d\n", rxBuff.size());
 
 	/*int numUints32s = len / 4;
