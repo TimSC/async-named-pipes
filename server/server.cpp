@@ -11,7 +11,7 @@ using namespace std;
 #include <stdio.h>
 #include <tchar.h>
 #include <strsafe.h>
-#define BUFSIZE 1024*1024
+#define BUFSIZE 1024*1024*10
  
 DWORD WINAPI InstanceThread(LPVOID); 
 VOID GetAnswerToRequest(char *, LPDWORD, class InstanceConfig &instanceConfig, int frameCount); 
